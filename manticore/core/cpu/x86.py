@@ -4485,6 +4485,21 @@ class X86Cpu(Cpu):
 #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 #@@@@@@@@@@@@@@@@@ compulsive coding after this @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @instruction
+    def HLT(cpu):
+        '''
+        Halt
+
+        Stops instruction execution and places the processor in a HALT state. 
+        An enabled interrupt (including NMI and SMI), a debug exception, the BINIT# signal, 
+        the INIT# signal, or the RESET# signal will resume execution. If an interrupt 
+        (including NMI) is used to resume execution after a HLT instruction, the saved 
+        instruction pointer (CS:EIP) points to the instruction following the HLT instruction.
+        unless they are each individually halted by executing a HLT instruction.
+        '''
+        logger.warning("HLT instruction not fully implemented: Jumping to 0x1 address")
+        cpu.PC = 0x00000001
+
+    @instruction
     def STMXCSR(cpu, dest):
         '''Store MXCSR Register State
         Stores the contents of the MXCSR control and status register to the destination operand.

@@ -2674,6 +2674,18 @@ class SLinux(Linux):
 
         return super().sys_getrandom(buf, size, flags)
 
+    def sys_tgkill(self, tgid, pid, sig):
+        '''
+        This syscall also checks the tgid and returns -ESRCH even if the PID exists but it's not
+        belonging to the target process anymore. This method solves the problem of threads 
+        exiting and PIDs getting reused.
+        '''
+        if sig == 6:
+            raise TerminateState(f"Aborting: tgkill with signal {sig}")
+        else:
+            pass
+
+
     def generate_workspace_files(self):
         def solve_to_fd(data, fd):
             def make_chr(c):
