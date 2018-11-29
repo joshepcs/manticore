@@ -1262,6 +1262,33 @@ class Linux(Platform):
 
         return 0
 
+    def sys_llseek(self, fd, offset_high, offset_low, result, whence):
+        '''
+        lseek - reposition read/write file offset
+
+        The lseek() function repositions the file offset of the open file description associated
+        with the file descriptor fd to the argument offset according to the directive whence
+
+
+        :param fd: a valid file descriptor
+        :param offset: the offset in bytes
+        :param whence: SEEK_SET: The file offset is set to offset bytes.
+                       SEEK_CUR: The file offset is set to its current location plus offset bytes.
+                       SEEK_END: The file offset is set to the size of the file plus offset bytes.
+
+        :return: 0 (Success), or EBADF (fd is not a valid file descriptor or is not open)
+
+        '''
+        signed_offset = ctypes.c_int64(offset_high << 32 | offset_low).value
+        try:
+            self._get_fd(fd).seek(signed_offset, whence)
+        except FdError as e:
+            logger.info(("LLSEEK: Not valid file descriptor on lseek."
+                         "Fd not seekable. Returning EBADF"))
+            return -e.err
+
+        return 0
+
     def sys_read(self, fd, buf, count):
         data: bytes = bytes()
         if count != 0:
@@ -1654,7 +1681,7 @@ class Linux(Platform):
             return -errno.EINVAL
         filename = self.current.read_string(path)
         if filename == '/proc/self/exe':
-            data = os.path.abspath(self.program)
+            data = os.path.abspath(self.program)[:bufsize]
         else:
             data = os.readlink(filename)[:bufsize]
         self.current.write_bytes(buf, data)
@@ -2354,23 +2381,23 @@ class Linux(Platform):
         def to_timespec(ts):
             return struct.pack('<LL', int(ts), int(ts % 1 * 1e9))
 
-        bufstat = add(8, stat.st_dev)        # unsigned long long      st_dev;
-        bufstat += add(8, stat.st_ino)        # unsigned long long   __st_ino;
-        bufstat += add(4, stat.st_mode)       # unsigned int    st_mode;
-        bufstat += add(4, stat.st_nlink)      # unsigned int    st_nlink;
-        bufstat += add(4, stat.st_uid)        # unsigned long   st_uid;
-        bufstat += add(4, stat.st_gid)        # unsigned long   st_gid;
-        bufstat += add(8, stat.st_rdev)       # unsigned long long st_rdev;
-        bufstat += add(8, 0)                  # unsigned long long __pad1;
-        bufstat += add(8, stat.st_size)       # long long       st_size;
-        bufstat += add(4, stat.st_blksize)    # int   st_blksize;
-        bufstat += add(4, 0)                  # int   __pad2;
-        bufstat += add(8, stat.st_blocks)     # unsigned long long st_blocks;
-        bufstat += to_timespec(stat.st_atime)  # unsigned long   st_atime;
-        bufstat += to_timespec(stat.st_mtime)  # unsigned long   st_mtime;
-        bufstat += to_timespec(stat.st_ctime)  # unsigned long   st_ctime;
-        bufstat += add(4, 0)                   # unsigned int __unused4;
-        bufstat += add(4, 0)                   # unsigned int __unused5;
+        # glibc/sysdeps/unix/sysv/linux/bits/stat.h
+        bufstat  = add(8, stat.st_dev)         # unsigned long long st_dev;
+        bufstat += add(4, 0)                   # unsigned char      __pad0[4]
+        bufstat += add(4, stat.st_ino)         # unsigned int       __st_ino;
+        bufstat += add(4, stat.st_mode)        # unsigned int       st_mode;
+        bufstat += add(4, stat.st_nlink)       # unsigned int       st_nlink;
+        bufstat += add(4, stat.st_uid)         # unsigned long      st_uid;
+        bufstat += add(4, stat.st_gid)         # unsigned long      st_gid;
+        bufstat += add(8, stat.st_rdev)        # unsigned long long st_rdev;
+        bufstat += add(4, 0)                   # unsigned char      __pad1[4];
+        bufstat += add(8, stat.st_size)        # long long          st_size;
+        bufstat += add(4, stat.st_blksize)     # unsigned int       st_blksize;
+        bufstat += add(8, stat.st_blocks)      # unsigned long long st_blocks;
+        bufstat += to_timespec(stat.st_atime)  # unsigned long      st_atime;
+        bufstat += to_timespec(stat.st_mtime)  # unsigned long      st_mtime;
+        bufstat += to_timespec(stat.st_ctime)  # unsigned long      st_ctime;
+        bufstat += add(8, stat.st_ino)         # unsigned long long st_ino;
 
         self.current.write_bytes(buf, bufstat)
         return 0
@@ -2685,6 +2712,24 @@ class SLinux(Linux):
         else:
             pass
 
+    def sys_llseek(self, fd, offset_high, offset_low, result, whence):
+        if issymbolic(fd):
+            logger.debug("Ask to llseek to a symbolic file descriptor!!")
+            raise ConcretizeArgument(self, 0)
+
+        if issymbolic(offset_high):
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(offset_low):
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(result):
+            raise ConcretizeArgument(self, 3)
+
+        if issymbolic(whence):
+            raise ConcretizeArgument(self, 4)
+
+        return super().sys_llseek(fd, offset_high, offset_low, result, whence)
 
     def generate_workspace_files(self):
         def solve_to_fd(data, fd):
